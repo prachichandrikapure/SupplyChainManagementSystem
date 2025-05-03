@@ -44,6 +44,8 @@ services:
     environment:
       ZOOKEEPER_CLIENT_PORT: 2181
       ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "2181:2181"
   kafka:
     image: confluentinc/cp-kafka:7.3.0
     environment:
@@ -53,6 +55,8 @@ services:
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
     depends_on:
       - zookeeper
+    ports:
+      - "9092:9092"
   zipkin:
     image: openzipkin/zipkin:2.24
     ports:
@@ -62,28 +66,46 @@ services:
     environment:
       - discovery.type=single-node
       - xpack.security.enabled=false
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
     ports:
       - "9200:9200"
+    volumes:
+      - elasticsearch_data:/usr/share/elasticsearch/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9200"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
   logstash:
     image: docker.elastic.co/logstash/logstash:8.10.0
     depends_on:
       - elasticsearch
+    volumes:
+      - ./logstash/logstash.conf:/usr/share/logstash/pipeline/logstash.conf
   kibana:
     image: docker.elastic.co/kibana/kibana:8.10.0
     ports:
       - "5601:5601"
     depends_on:
       - elasticsearch
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5601/api/status"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
   ConfigServer:
     build: ./ConfigServer
+    image: supplychainmanagementsystem-configserver:latest
     ports:
       - "8888:8888"
   eureka-server:
     build: ./eureka-server
+    image: supplychainmanagementsystem-eurekaserver:latest
     ports:
       - "8761:8761"
   APIGateway:
     build: ./APIGateway
+    image: supplychainmanagementsystem-apigateway:latest
     ports:
       - "8080:8080"
     depends_on:
@@ -91,6 +113,7 @@ services:
       - eureka-server
   InventoryService:
     build: ./InventoryService
+    image: supplychainmanagementsystem-inventoryservice:latest
     ports:
       - "8081:8081"
     depends_on:
@@ -100,6 +123,7 @@ services:
       - eureka-server
   OrderService:
     build: ./OrderService
+    image: supplychainmanagementsystem-orderservice:latest
     ports:
       - "8082:8082"
     depends_on:
@@ -109,6 +133,7 @@ services:
       - eureka-server
   NotificationService:
     build: ./NotificationService
+    image: supplychainmanagementsystem-notificationservice:latest
     ports:
       - "8083:8083"
     depends_on:
@@ -117,6 +142,7 @@ services:
       - eureka-server
   UserService:
     build: ./UserService
+    image: supplychainmanagementsystem-userservice:latest
     ports:
       - "8084:8084"
     depends_on:
@@ -125,6 +151,7 @@ services:
       - eureka-server
   WarehouseService:
     build: ./WarehouseService
+    image: supplychainmanagementsystem-warehouseservice:latest
     ports:
       - "8085:8085"
     depends_on:
@@ -135,4 +162,5 @@ volumes:
   postgres_inventory_data:
   postgres_order_data:
   postgres_user_data:
-  postgres_warehouse_data: 
+  postgres_warehouse_data:
+  elasticsearch_data:
