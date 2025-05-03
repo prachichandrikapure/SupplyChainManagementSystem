@@ -1,0 +1,139 @@
+version: '3.8'
+services:
+  postgres-inventory:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: bayer_user
+      POSTGRES_PASSWORD: secure_password
+      POSTGRES_DB: inventory_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_inventory_data:/var/lib/postgresql/data
+  postgres-order:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: bayer_user
+      POSTGRES_PASSWORD: secure_password
+      POSTGRES_DB: order_db
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_order_data:/var/lib/postgresql/data
+  postgres-user:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: bayer_user
+      POSTGRES_PASSWORD: secure_password
+      POSTGRES_DB: user_db
+    ports:
+      - "5434:5432"
+    volumes:
+      - postgres_user_data:/var/lib/postgresql/data
+  postgres-warehouse:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: bayer_user
+      POSTGRES_PASSWORD: secure_password
+      POSTGRES_DB: warehouse_db
+    ports:
+      - "5435:5432"
+    volumes:
+      - postgres_warehouse_data:/var/lib/postgresql/data
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.3.0
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+  kafka:
+    image: confluentinc/cp-kafka:7.3.0
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+    depends_on:
+      - zookeeper
+  zipkin:
+    image: openzipkin/zipkin:2.24
+    ports:
+      - "9411:9411"
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.10.0
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+    ports:
+      - "9200:9200"
+  logstash:
+    image: docker.elastic.co/logstash/logstash:8.10.0
+    depends_on:
+      - elasticsearch
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.10.0
+    ports:
+      - "5601:5601"
+    depends_on:
+      - elasticsearch
+  ConfigServer:
+    build: ./ConfigServer
+    ports:
+      - "8888:8888"
+  eureka-server:
+    build: ./eureka-server
+    ports:
+      - "8761:8761"
+  APIGateway:
+    build: ./APIGateway
+    ports:
+      - "8080:8080"
+    depends_on:
+      - ConfigServer
+      - eureka-server
+  InventoryService:
+    build: ./InventoryService
+    ports:
+      - "8081:8081"
+    depends_on:
+      - postgres-inventory
+      - kafka
+      - ConfigServer
+      - eureka-server
+  OrderService:
+    build: ./OrderService
+    ports:
+      - "8082:8082"
+    depends_on:
+      - postgres-order
+      - kafka
+      - ConfigServer
+      - eureka-server
+  NotificationService:
+    build: ./NotificationService
+    ports:
+      - "8083:8083"
+    depends_on:
+      - kafka
+      - ConfigServer
+      - eureka-server
+  UserService:
+    build: ./UserService
+    ports:
+      - "8084:8084"
+    depends_on:
+      - postgres-user
+      - ConfigServer
+      - eureka-server
+  WarehouseService:
+    build: ./WarehouseService
+    ports:
+      - "8085:8085"
+    depends_on:
+      - postgres-warehouse
+      - ConfigServer
+      - eureka-server
+volumes:
+  postgres_inventory_data:
+  postgres_order_data:
+  postgres_user_data:
+  postgres_warehouse_data: 
