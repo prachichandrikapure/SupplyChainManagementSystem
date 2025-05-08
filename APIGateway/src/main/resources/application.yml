@@ -1,0 +1,53 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: APIGateway
+  config:
+    import: optional:configserver:http://configserver:8888
+  cloud:
+    gateway:
+      discovery:
+        locator:
+          enabled: true
+          lower-case-service-id: true
+      routes:
+        - id: user-service
+          uri: lb://UserService
+          predicates:
+            - Path=/user/**
+        - id: order-service
+          uri: lb://OrderService
+          predicates:
+            - Path=/order/**
+        - id: inventory-service
+          uri: lb://InventoryService
+          predicates:
+            - Path=/inventory/**
+        - id: notification-service
+          uri: lb://NotificationService
+          predicates:
+            - Path=/notification/**
+        - id: warehouse-service
+          uri: lb://WarehouseService
+          predicates:
+            - Path=/warehouse/**
+  zipkin:
+    base-url: http://zipkin:9411/
+
+eureka:
+  client:
+    service-url:
+      defaultZone: http://eureka-server:8761/eureka/
+    fetch-registry: true
+    register-with-eureka: true
+
+logging:
+  level:
+    org.springframework: INFO
+    com.supplychain: DEBUG
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
+  file:
+    name: /logs/apigateway.log

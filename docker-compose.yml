@@ -9,6 +9,15 @@ services:
       - "5432:5432"
     volumes:
       - postgres_inventory_data:/var/lib/postgresql/data
+    networks:
+      - supplychain-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bayer_user -d inventory_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   postgres-order:
     image: postgres:15
     environment:
@@ -19,16 +28,34 @@ services:
       - "5433:5432"
     volumes:
       - postgres_order_data:/var/lib/postgresql/data
+    networks:
+      - supplychain-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bayer_user -d order_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   postgres-user:
     image: postgres:15
     environment:
-      POSTGRES_USER: bayer_user
-      POSTGRES_PASSWORD: secure_password
-      POSTGRES_DB: user_db
+      POSTGRES_USER: pracchan
+      POSTGRES_PASSWORD: Mushi#1234
+      POSTGRES_DB: SupplyChainDB
     ports:
       - "5434:5432"
     volumes:
       - postgres_user_data:/var/lib/postgresql/data
+    networks:
+      - supplychain-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pracchan -d SupplyChainDB"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   postgres-warehouse:
     image: postgres:15
     environment:
@@ -39,6 +66,15 @@ services:
       - "5435:5432"
     volumes:
       - postgres_warehouse_data:/var/lib/postgresql/data
+    networks:
+      - supplychain-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bayer_user -d warehouse_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   zookeeper:
     image: confluentinc/cp-zookeeper:7.3.0
     environment:
@@ -46,6 +82,17 @@ services:
       ZOOKEEPER_TICK_TIME: 2000
     ports:
       - "2181:2181"
+    volumes:
+      - zookeeper-data:/var/lib/zookeeper/data
+    networks:
+      - supplychain-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "2181"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   kafka:
     image: confluentinc/cp-kafka:7.3.0
     environment:
@@ -54,13 +101,36 @@ services:
       KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
     depends_on:
-      - zookeeper
+      zookeeper:
+        condition: service_healthy
     ports:
       - "9092:9092"
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+    networks:
+      - supplychain-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "9092"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   zipkin:
     image: openzipkin/zipkin:2.24
     ports:
       - "9411:9411"
+    volumes:
+      - zipkin-data:/data
+    networks:
+      - supplychain-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9411/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
   elasticsearch:
     image: docker.elastic.co/elasticsearch/elasticsearch:8.9.0
     environment:
@@ -71,96 +141,218 @@ services:
       - "9200:9200"
     volumes:
       - elasticsearch_data:/usr/share/elasticsearch/data
+    networks:
+      - supplychain-network
+    restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9200"]
       interval: 30s
       timeout: 10s
       retries: 5
+
   logstash:
     image: docker.elastic.co/logstash/logstash:8.9.0
     depends_on:
-      - elasticsearch
+      elasticsearch:
+        condition: service_healthy
+    ports:
+      - "9600:9600"
     volumes:
       - ./logstash/logstash.conf:/usr/share/logstash/pipeline/logstash.conf
+    networks:
+      - supplychain-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9600"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
   kibana:
     image: docker.elastic.co/kibana/kibana:8.9.0
     ports:
       - "5601:5601"
     depends_on:
-      - elasticsearch
+      elasticsearch:
+        condition: service_healthy
+    networks:
+      - supplychain-network
+    restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:5601/api/status"]
       interval: 30s
       timeout: 10s
       retries: 5
-  ConfigServer:
-    build: ./ConfigServer
-    image: supplychainmanagementsystem-configserver:latest
-    ports:
-      - "8888:8888"
+
   eureka-server:
     build: ./eureka-server
     image: supplychainmanagementsystem-eurekaserver:latest
     ports:
       - "8761:8761"
-  APIGateway:
+    networks:
+      - supplychain-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8761"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  ConfigServer:
+    build: ./ConfigServer
+    image: supplychainmanagementsystem-configserver:latest
+    ports:
+      - "8888:8888"
+    depends_on:
+      eureka-server:
+        condition: service_healthy
+    networks:
+      - supplychain-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8888/application/default"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  apigateway:
     build: ./APIGateway
     image: supplychainmanagementsystem-apigateway:latest
     ports:
       - "8080:8080"
     depends_on:
-      - ConfigServer
-      - eureka-server
+      eureka-server:
+        condition: service_healthy
+      ConfigServer:
+        condition: service_healthy
+    networks:
+      - supplychain-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
   InventoryService:
     build: ./InventoryService
     image: supplychainmanagementsystem-inventoryservice:latest
     ports:
       - "8081:8081"
     depends_on:
-      - postgres-inventory
-      - kafka
-      - ConfigServer
-      - eureka-server
+      postgres-inventory:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      eureka-server:
+        condition: service_healthy
+      ConfigServer:
+        condition: service_healthy
+    networks:
+      - supplychain-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8081/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
   OrderService:
     build: ./OrderService
     image: supplychainmanagementsystem-orderservice:latest
     ports:
       - "8082:8082"
     depends_on:
-      - postgres-order
-      - kafka
-      - ConfigServer
-      - eureka-server
+      postgres-order:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      eureka-server:
+        condition: service_healthy
+      ConfigServer:
+        condition: service_healthy
+    networks:
+      - supplychain-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8082/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
   NotificationService:
     build: ./NotificationService
     image: supplychainmanagementsystem-notificationservice:latest
     ports:
       - "8083:8083"
     depends_on:
-      - kafka
-      - ConfigServer
-      - eureka-server
+      kafka:
+        condition: service_healthy
+      eureka-server:
+        condition: service_healthy
+      ConfigServer:
+        condition: service_healthy
+    networks:
+      - supplychain-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8083/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
   UserService:
     build: ./UserService
     image: supplychainmanagementsystem-userservice:latest
     ports:
       - "8084:8084"
     depends_on:
-      - postgres-user
-      - ConfigServer
-      - eureka-server
+      postgres-user:
+        condition: service_healthy
+      eureka-server:
+        condition: service_healthy
+      ConfigServer:
+        condition: service_healthy
+    networks:
+      - supplychain-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8084/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
   WarehouseService:
     build: ./WarehouseService
     image: supplychainmanagementsystem-warehouseservice:latest
     ports:
       - "8085:8085"
     depends_on:
-      - postgres-warehouse
-      - ConfigServer
-      - eureka-server
+      postgres-warehouse:
+        condition: service_healthy
+      eureka-server:
+        condition: service_healthy
+      ConfigServer:
+        condition: service_healthy
+    networks:
+      - supplychain-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8085/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+networks:
+  supplychain-network:
+    driver: bridge
+
 volumes:
   postgres_inventory_data:
   postgres_order_data:
   postgres_user_data:
   postgres_warehouse_data:
+  zookeeper-data:
+  kafka-data:
+  zipkin-data:
   elasticsearch_data:
